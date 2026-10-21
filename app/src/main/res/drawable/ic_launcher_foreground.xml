@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer Broadcast Shield / Screen Frame -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M30,28h48c3.3,0 6,2.7 6,6v34c0,3.3 -2.7,6 -6,6H62l6,8H40l6,-8H30c-3.3,0 -6,-2.7 -6,-6V34C24,30.7 26.7,28 30,28zM32,35v26h44V35H32z" />
+    <!-- Bold Play / Live Football Crest Triangle -->
+    <path
+        android:fillColor="#00FF87"
+        android:pathData="M46,39l20,9l-20,9z" />
+</vector>

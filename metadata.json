@@ -1,0 +1,6 @@
+{
+  "name": "TouchTheGrass",
+  "description": "Touchthegrass.com — Clean Live Football & 4K Streaming Hub featuring EpicSports & FrameTV live match servers, UCL, EPL, LaLiga, Inter Miami, Google Sign-In profile sync, and Top 20 abstract football themes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

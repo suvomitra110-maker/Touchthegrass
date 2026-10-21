@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">TouchTheGrass</string>
+    <string name="nav_cinema">Cinema &amp; TV</string>
+    <string name="nav_live_football">Live Matches</string>
+    <string name="nav_standings">Standings</string>
+    <string name="nav_ai_hub">AI Scout</string>
+    <string name="nav_alerts">Alerts</string>
+    <string name="nav_security">My Profile</string>
+    <string name="tagline_framextv">Touchthegrass.com • EpicSports &amp; FrameTV Live Football</string>
+    <string name="btn_speak_commentary">Voice Broadcast (TTS)</string>
+    <string name="btn_live_search_grounding">Live Google Search Pulse</string>
+    <string name="btn_analyze_photo">Analyze Match / Poster Photo</string>
+    <string name="btn_trigger_goal_alert">Simulate Major Goal Push Alert</string>
+    <string name="btn_trigger_kickoff_alert">Simulate Match Kickoff Push Alert</string>
+    <string name="search_placeholder_cinema">Search 4K movies, series, anime, or servers…</string>
+    <string name="search_placeholder_grounding">Ask Google Search for live football tables, UCL scores, Inter Miami news…</string>
+    <string name="search_placeholder_standings">Search club or code in league table…</string>
+    <string name="search_placeholder_matches">Search active matches by team name…</string>
+</resources>

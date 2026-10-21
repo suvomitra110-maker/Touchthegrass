@@ -1,0 +1,66 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Stores authenticated user profile details including username, round profile picture, favorite football club, selected abstract theme (including Messi Black & White theme), and enabled league filters.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The authenticated Firebase user UID."
+        },
+        "username": {
+          "type": "string",
+          "description": "The user's display name shown at the top of the upper-right menu."
+        },
+        "favoriteClub": {
+          "type": "string",
+          "description": "The user's favorite football club shown in the upper-right menu."
+        },
+        "profilePictureId": {
+          "type": "string",
+          "description": "Avatar badge or custom photo identifier for the round profile picture."
+        },
+        "photoUrl": {
+          "type": "string",
+          "description": "Optional Google account photo URL or custom URI."
+        },
+        "selectedThemeId": {
+          "type": "string",
+          "description": "Selected theme ID from the Top 20 Abstract Football Themes."
+        },
+        "enabledLeagues": {
+          "type": "string",
+          "description": "Comma-separated list of league codes toggled on in the top-level filtering bar."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated."
+        }
+      },
+      "required": [
+        "userId",
+        "username",
+        "favoriteClub",
+        "profilePictureId",
+        "selectedThemeId",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Authenticated user profile document keyed by Firebase Auth UID."
+    }
+  }
+}
