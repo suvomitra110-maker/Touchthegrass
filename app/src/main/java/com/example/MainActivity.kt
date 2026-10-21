@@ -73,6 +73,7 @@ import androidx.credentials.CredentialManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.notifications.MatchNotificationHelper
+import com.example.ui.components.DynamicIslandScoreboard
 import com.example.ui.components.MessiAndAbstractBackground
 import com.example.ui.components.OledCardBorder
 import com.example.ui.components.OledCardSurface
@@ -179,6 +180,9 @@ fun FrameXTVApp(
     val userEmail by viewModel.userEmail.collectAsStateWithLifecycle()
     val userName by viewModel.userName.collectAsStateWithLifecycle()
     val favoriteClub by viewModel.favoriteClub.collectAsStateWithLifecycle()
+    val favoritedTeams by viewModel.favoritedTeams.collectAsStateWithLifecycle()
+    val fcmToken by viewModel.fcmToken.collectAsStateWithLifecycle()
+    val fcmSubscribedTopics by viewModel.fcmSubscribedTopics.collectAsStateWithLifecycle()
     val profilePictureId by viewModel.profilePictureId.collectAsStateWithLifecycle()
     val customAvatarBitmap by viewModel.customAvatarBitmap.collectAsStateWithLifecycle()
     val selectedTheme by viewModel.selectedTheme.collectAsStateWithLifecycle()
@@ -214,10 +218,26 @@ fun FrameXTVApp(
     val matchSearchQuery by viewModel.matchSearchQuery.collectAsStateWithLifecycle()
     val selectedMatchId by viewModel.selectedMatchId.collectAsStateWithLifecycle()
     val selectedMatchServer by viewModel.selectedMatchServer.collectAsStateWithLifecycle()
+    val pinnedMatchId by viewModel.pinnedMatchId.collectAsStateWithLifecycle()
+    val isPinnedToNotificationBar by viewModel.isPinnedToNotificationBar.collectAsStateWithLifecycle()
+    val dynamicIslandGoalFlash by viewModel.dynamicIslandGoalFlash.collectAsStateWithLifecycle()
     val subscribedAlerts by viewModel.matchAlerts.collectAsStateWithLifecycle()
     val notificationLogs by viewModel.notificationLogs.collectAsStateWithLifecycle()
     val watchlist by viewModel.watchlist.collectAsStateWithLifecycle()
     val inAppBanner by viewModel.inAppAlertBanner.collectAsStateWithLifecycle()
+
+    val activeIslandMatch = remember(matches, pinnedMatchId, favoriteClub) {
+        if (pinnedMatchId != null) {
+            matches.find { it.id == pinnedMatchId }
+        } else {
+            null
+        } ?: matches.find { match ->
+            match.homeTeam.contains(favoriteClub, ignoreCase = true) ||
+                match.awayTeam.contains(favoriteClub, ignoreCase = true) ||
+                favoriteClub.contains(match.homeTeam, ignoreCase = true) ||
+                favoriteClub.contains(match.awayTeam, ignoreCase = true)
+        } ?: matches.first()
+    }
 
     val selectedMediaCategory by viewModel.selectedMediaCategory.collectAsStateWithLifecycle()
     val cinemaSearchQuery by viewModel.cinemaSearchQuery.collectAsStateWithLifecycle()
@@ -311,6 +331,36 @@ fun FrameXTVApp(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
+                DynamicIslandScoreboard(
+                    activeMatch = activeIslandMatch,
+                    allMatches = matches,
+                    favoriteClub = favoriteClub,
+                    pinnedMatchId = pinnedMatchId,
+                    isPinnedToNotificationBar = isPinnedToNotificationBar,
+                    goalFlashMessage = dynamicIslandGoalFlash,
+                    streamServerName = selectedMatchServer.name,
+                    onPinMatch = { matchId ->
+                        ensureNotificationPermissionAndRun {
+                            viewModel.pinMatchToScoreboard(matchId, alsoPinNotificationBar = true)
+                        }
+                    },
+                    onTogglePinToNotificationBar = {
+                        ensureNotificationPermissionAndRun {
+                            viewModel.togglePinScoreboardToNotificationBar()
+                        }
+                    },
+                    onTriggerFavoriteTeamGoal = {
+                        ensureNotificationPermissionAndRun {
+                            viewModel.triggerFavoriteClubFcmPush(isGoal = true)
+                        }
+                    },
+                    onJumpToMatchStream = { matchId ->
+                        showSecurityCyberScreen = false
+                        viewModel.selectMatch(matchId)
+                        currentTab = FrameXTab.LIVE_FOOTBALL
+                    }
+                )
+
                 AnimatedVisibility(visible = inAppBanner != null) {
                     Surface(
                         color = OledCardSurface,
@@ -406,6 +456,19 @@ fun FrameXTVApp(
                                     },
                                     matchSearchQuery = matchSearchQuery,
                                     onUpdateMatchSearch = viewModel::updateMatchSearchQuery,
+                                    favoriteClub = favoriteClub,
+                                    pinnedMatchId = pinnedMatchId,
+                                    isPinnedToNotificationBar = isPinnedToNotificationBar,
+                                    onPinMatchToScoreboard = { matchId ->
+                                        ensureNotificationPermissionAndRun {
+                                            viewModel.pinMatchToScoreboard(matchId, alsoPinNotificationBar = true)
+                                        }
+                                    },
+                                    onTogglePinToNotificationBar = {
+                                        ensureNotificationPermissionAndRun {
+                                            viewModel.togglePinScoreboardToNotificationBar()
+                                        }
+                                    },
                                     onOpenStandings = { competition ->
                                         viewModel.selectStandingsLeague(competition)
                                         currentTab = FrameXTab.STANDINGS
@@ -489,9 +552,23 @@ fun FrameXTVApp(
                                     watchlist = watchlist,
                                     matches = matches,
                                     hasNotificationPermission = hasNotifPermission,
+                                    favoriteClub = favoriteClub,
+                                    favoritedTeams = favoritedTeams,
+                                    fcmToken = fcmToken,
+                                    fcmSubscribedTopics = fcmSubscribedTopics,
                                     onRequestNotificationPermission = {
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
+                                    },
+                                    onToggleFavoriteClubFcm = { club ->
+                                        ensureNotificationPermissionAndRun {
+                                            viewModel.toggleFavoriteClubFcm(club)
+                                        }
+                                    },
+                                    onTriggerFavoriteClubFcmPush = { isGoal ->
+                                        ensureNotificationPermissionAndRun {
+                                            viewModel.triggerFavoriteClubFcmPush(isGoal)
                                         }
                                     },
                                     onUnsubscribeMatch = viewModel::toggleMatchAlertSubscription,

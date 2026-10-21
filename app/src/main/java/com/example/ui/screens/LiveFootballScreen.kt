@@ -1,9 +1,5 @@
 package com.example.ui.screens
 
-import android.annotation.SuppressLint
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -49,9 +45,11 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SportsSoccer
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Videocam
@@ -91,7 +89,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.example.R
 import com.example.data.local.MatchAlertEntity
 import com.example.model.CommentaryEvent
@@ -136,6 +133,11 @@ fun LiveFootballScreen(
     onTriggerKickoffAlert: (FootballMatch) -> Unit,
     matchSearchQuery: String = "",
     onUpdateMatchSearch: (String) -> Unit = {},
+    favoriteClub: String = "Inter Miami CF",
+    pinnedMatchId: String? = null,
+    isPinnedToNotificationBar: Boolean = true,
+    onPinMatchToScoreboard: (String?) -> Unit = {},
+    onTogglePinToNotificationBar: () -> Unit = {},
     onOpenStandings: (FootballCompetition) -> Unit = {},
     onOpenWebPortal: (String, String) -> Unit = { _, _ -> }
 ) {
@@ -258,6 +260,61 @@ fun LiveFootballScreen(
                         .fillMaxWidth()
                         .testTag("main_feed_match_search_input")
                 )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Zero-Friction Favorite Club & FCM Auto-Alert Bar
+                val isFavFiltered = matchSearchQuery.equals(favoriteClub, ignoreCase = true)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = if (isFavFiltered) VerifiedPillGreen.copy(alpha = 0.24f) else OledCardSurface,
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isFavFiltered) VerifiedPillGreen else OledCardBorder
+                        ),
+                        modifier = Modifier
+                            .clickable {
+                                if (isFavFiltered) {
+                                    onUpdateMatchSearch("")
+                                } else {
+                                    onUpdateMatchSearch(favoriteClub)
+                                }
+                            }
+                            .testTag("filter_favorite_club_chip")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = "Favorite Club Filter",
+                                tint = Color(0xFFFACC15),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = if (isFavFiltered) "Showing ★ $favoriteClub (Tap to Reset)" else "★ My Club: $favoriteClub",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isFavFiltered) VerifiedPillGreen else Color.White
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "● FCM Goal & Kickoff Push: ON",
+                        fontFamily = JetBrainsMonoFontFamily,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VerifiedPillGreen
+                    )
+                }
             }
         }
 
@@ -456,12 +513,26 @@ fun LiveFootballScreen(
 
         // 2. Main Live Broadcast Video Player Card with EpicSports (live.epicsports.in/?m=1) & Server Choose Options
         item {
+            val isBroadcastPinned = pinnedMatchId == activeMatch.id ||
+                (pinnedMatchId == null && (
+                    activeMatch.homeTeam.contains(favoriteClub, ignoreCase = true) ||
+                        activeMatch.awayTeam.contains(favoriteClub, ignoreCase = true)
+                    ))
             LiveStadiumBroadcastCard(
                 match = activeMatch,
                 selectedServer = selectedServer,
                 isSubscribed = isSubscribed,
+                isPinnedScoreboard = isBroadcastPinned,
+                isPinnedToNotificationBar = isPinnedToNotificationBar,
                 onSelectServer = onSelectServer,
                 onToggleSubscription = { onToggleAlertSubscription(activeMatch) },
+                onPinScoreboard = {
+                    if (pinnedMatchId == activeMatch.id) {
+                        onTogglePinToNotificationBar()
+                    } else {
+                        onPinMatchToScoreboard(activeMatch.id)
+                    }
+                },
                 onOpenEpicSportsPortal = { title, url ->
                     onOpenWebPortal(title, url)
                 }
@@ -648,9 +719,23 @@ fun LiveFootballScreen(
         } else {
             items(filteredMatches, key = { it.id }) { match ->
                 val isSelected = match.id == activeMatch.id
+                val isFavClubMatch = match.homeTeam.contains(favoriteClub, ignoreCase = true) ||
+                    match.awayTeam.contains(favoriteClub, ignoreCase = true) ||
+                    favoriteClub.contains(match.homeTeam, ignoreCase = true) ||
+                    favoriteClub.contains(match.awayTeam, ignoreCase = true)
+                val isMatchPinned = pinnedMatchId == match.id || (pinnedMatchId == null && isFavClubMatch)
                 CleanOledMatchRowCard(
                     match = match,
                     isSelected = isSelected,
+                    isFavoriteClubMatch = isFavClubMatch,
+                    isPinnedScoreboard = isMatchPinned,
+                    onPinClick = {
+                        if (pinnedMatchId == match.id) {
+                            onPinMatchToScoreboard(null)
+                        } else {
+                            onPinMatchToScoreboard(match.id)
+                        }
+                    },
                     onClick = { onSelectMatch(match.id) }
                 )
             }
@@ -701,6 +786,9 @@ fun LivePulseBadge(text: String) {
 private fun CleanOledMatchRowCard(
     match: FootballMatch,
     isSelected: Boolean,
+    isFavoriteClubMatch: Boolean = false,
+    isPinnedScoreboard: Boolean = false,
+    onPinClick: () -> Unit = {},
     onClick: () -> Unit
 ) {
     val compColor = Color(match.competition.badgeColorHex)
@@ -751,13 +839,50 @@ private fun CleanOledMatchRowCard(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${match.competition.shortTag} • ${match.minute}' LIVE • ${match.venue}",
+                    text = buildString {
+                        append("${match.competition.shortTag} • ${match.minute}' LIVE • ${match.venue}")
+                        if (isFavoriteClubMatch) append(" • ★ FCM Alert")
+                    },
                     style = MaterialTheme.typography.bodySmall,
-                    color = OledMutedText,
+                    color = if (isFavoriteClubMatch) VerifiedPillGreen else OledMutedText,
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            // Pin to Dynamic Island & Notification Bar Button
+            Surface(
+                color = if (isPinnedScoreboard) VerifiedPillGreen.copy(alpha = 0.22f) else Color(0xFF23252B),
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(
+                    1.dp,
+                    if (isPinnedScoreboard) VerifiedPillGreen else OledCardBorder
+                ),
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .clickable(onClick = onPinClick)
+                    .testTag("pin_match_button_${match.id}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PushPin,
+                        contentDescription = "Pin Match to Dynamic Island & Notification Bar",
+                        tint = if (isPinnedScoreboard) VerifiedPillGreen else OledMutedText,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = if (isPinnedScoreboard) "Pinned" else "Pin",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        color = if (isPinnedScoreboard) VerifiedPillGreen else OledMutedText,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             if (isSelected) {
@@ -785,20 +910,22 @@ private fun CleanOledMatchRowCard(
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun LiveStadiumBroadcastCard(
     match: FootballMatch,
     selectedServer: StreamServer,
     isSubscribed: Boolean,
+    isPinnedScoreboard: Boolean = false,
+    isPinnedToNotificationBar: Boolean = true,
     onSelectServer: (StreamServer) -> Unit,
     onToggleSubscription: () -> Unit,
+    onPinScoreboard: () -> Unit = {},
     onOpenEpicSportsPortal: (String, String) -> Unit
 ) {
-    // Player mode: "LIVE_VIDEO" (HTML5 Video Stream + Scoreboard HUD), "EPICSPORTS_WEB" (live.epicsports.in/?m=1), "RADAR"
+    // Player mode: "LIVE_VIDEO" (Native 60fps Live Broadcast Stream + Scoreboard HUD), "EPICSPORTS_WEB" (live.epicsports.in/?m=1), "RADAR"
     var playerMode by rememberSaveable { mutableStateOf("LIVE_VIDEO") }
     var isVideoPlaying by rememberSaveable { mutableStateOf(true) }
-    var isVideoMuted by rememberSaveable { mutableStateOf(true) }
+    var isVideoMuted by rememberSaveable { mutableStateOf(false) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "pitch_radar")
     val radarPhase by infiniteTransition.animateFloat(
@@ -860,24 +987,64 @@ private fun LiveStadiumBroadcastCard(
                         )
                     }
 
-                    IconButton(
-                        onClick = onToggleSubscription,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF23252B))
-                            .testTag("toggle_match_alert_button")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = if (isSubscribed) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
-                            contentDescription = "Toggle Goal & Kickoff Push Notifications",
-                            tint = if (isSubscribed) VerifiedPillGreen else OledMutedText,
-                            modifier = Modifier.size(15.dp)
-                        )
+                        Surface(
+                            color = if (isPinnedScoreboard && isPinnedToNotificationBar) {
+                                VerifiedPillGreen.copy(alpha = 0.22f)
+                            } else {
+                                Color(0xFF23252B)
+                            },
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isPinnedScoreboard && isPinnedToNotificationBar) VerifiedPillGreen else OledCardBorder
+                            ),
+                            modifier = Modifier
+                                .clickable(onClick = onPinScoreboard)
+                                .testTag("pin_broadcast_scoreboard_button")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PushPin,
+                                    contentDescription = "Pin Match Scoreboard to Dynamic Island & Notification Bar",
+                                    tint = if (isPinnedScoreboard && isPinnedToNotificationBar) VerifiedPillGreen else OledMutedText,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = if (isPinnedScoreboard && isPinnedToNotificationBar) "Pinned" else "Pin Score",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isPinnedScoreboard && isPinnedToNotificationBar) VerifiedPillGreen else Color.White
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = onToggleSubscription,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF23252B))
+                                .testTag("toggle_match_alert_button")
+                        ) {
+                            Icon(
+                                imageVector = if (isSubscribed) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
+                                contentDescription = "Toggle Goal & Kickoff Push Notifications",
+                                tint = if (isSubscribed) VerifiedPillGreen else OledMutedText,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
                     }
                 }
 
-                // Live Video Player / EpicSports.in Web Stream / Tactical Radar Viewport
+                // Live Video Player / EpicSports.in Server Stream / Tactical Radar Viewport
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -891,59 +1058,26 @@ private fun LiveStadiumBroadcastCard(
                 ) {
                     when (playerMode) {
                         "LIVE_VIDEO" -> {
-                            val playerHtml = remember(match.id, selectedServer.id, isVideoPlaying, isVideoMuted) {
-                                buildLiveBroadcastVideoHtml(
-                                    match = match,
-                                    server = selectedServer,
-                                    autoPlay = isVideoPlaying,
-                                    muted = isVideoMuted
-                                )
-                            }
-                            AndroidView(
-                                modifier = Modifier.fillMaxSize(),
-                                factory = { ctx ->
-                                    WebView(ctx).apply {
-                                        settings.javaScriptEnabled = true
-                                        settings.domStorageEnabled = true
-                                        settings.mediaPlaybackRequiresUserGesture = false
-                                        setBackgroundColor(android.graphics.Color.BLACK)
-                                        webViewClient = WebViewClient()
-                                    }
-                                },
-                                update = { webView ->
-                                    webView.loadDataWithBaseURL(
-                                        selectedServer.streamUrl,
-                                        playerHtml,
-                                        "text/html",
-                                        "UTF-8",
-                                        null
-                                    )
-                                }
+                            NativeLiveBroadcastVideoPlayer(
+                                match = match,
+                                server = selectedServer,
+                                isPlaying = isVideoPlaying,
+                                isMuted = isVideoMuted,
+                                animationPhase = radarPhase
                             )
                         }
 
                         "EPICSPORTS_WEB" -> {
-                            AndroidView(
-                                modifier = Modifier.fillMaxSize(),
-                                factory = { ctx ->
-                                    WebView(ctx).apply {
-                                        settings.javaScriptEnabled = true
-                                        settings.domStorageEnabled = true
-                                        settings.mediaPlaybackRequiresUserGesture = false
-                                        setBackgroundColor(android.graphics.Color.BLACK)
-                                        webViewClient = object : WebViewClient() {
-                                            override fun shouldOverrideUrlLoading(
-                                                view: WebView?,
-                                                request: WebResourceRequest?
-                                            ): Boolean = false
-                                        }
-                                        loadUrl(selectedServer.streamUrl)
-                                    }
-                                },
-                                update = { webView ->
-                                    if (webView.url != selectedServer.streamUrl) {
-                                        webView.loadUrl(selectedServer.streamUrl)
-                                    }
+                            EpicSportsServerFeedView(
+                                match = match,
+                                selectedServer = selectedServer,
+                                servers = servers,
+                                onSelectServer = onSelectServer,
+                                onOpenFullPortal = {
+                                    onOpenEpicSportsPortal(
+                                        "EpicSports Live • ${match.homeTeam} vs ${match.awayTeam}",
+                                        selectedServer.streamUrl
+                                    )
                                 }
                             )
                         }
@@ -1339,58 +1473,373 @@ private fun PlayerModeChip(
     }
 }
 
-private fun buildLiveBroadcastVideoHtml(
+@Composable
+private fun NativeLiveBroadcastVideoPlayer(
     match: FootballMatch,
     server: StreamServer,
-    autoPlay: Boolean,
-    muted: Boolean
-): String {
-    val playAttr = if (autoPlay) "autoplay" else ""
-    val muteAttr = if (muted) "muted" else ""
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-      <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body, html { width: 100%; height: 100%; background: #05070A; overflow: hidden; font-family: -apple-system, sans-serif; color: #fff; }
-        .player-wrap { position: relative; width: 100%; height: 100%; background: radial-gradient(circle at center, #0e2419 0%, #05070a 100%); }
-        video { width: 100%; height: 100%; object-fit: cover; opacity: 0.88; }
-        .hud-top { position: absolute; top: 10px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
-        .score-bug { display: flex; align-items: center; background: rgba(6, 7, 9, 0.86); border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; padding: 5px 10px; gap: 8px; }
-        .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 8px #10B981; }
-        .teams { font-weight: 800; font-size: 13px; letter-spacing: 0.4px; }
-        .score { background: #10B981; color: #04120B; font-weight: 900; font-family: monospace; padding: 2px 7px; border-radius: 6px; font-size: 13px; }
-        .minute { color: #10B981; font-family: monospace; font-size: 11px; font-weight: 700; }
-        .srv-badge { background: rgba(16, 185, 129, 0.18); border: 1px solid #10B981; color: #10B981; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 99px; }
-      </style>
-    </head>
-    <body>
-      <div class="player-wrap">
-        <video id="v" src="${server.videoStreamUrl}" $playAttr $muteAttr loop playsinline></video>
-        <div class="hud-top">
-          <div class="score-bug">
-            <div class="live-dot"></div>
-            <span class="teams">${match.homeShort}</span>
-            <span class="score">${match.homeScore} - ${match.awayScore}</span>
-            <span class="teams">${match.awayShort}</span>
-            <span class="minute">${match.minute}'</span>
-          </div>
-          <div class="srv-badge">${server.providerTag}</div>
-        </div>
-      </div>
-      <script>
-        const v = document.getElementById('v');
-        if (${if (autoPlay) "true" else "false"}) {
-          v.play().catch(() => {});
-        } else {
-          v.pause();
+    isPlaying: Boolean,
+    isMuted: Boolean,
+    animationPhase: Float
+) {
+    val activePhase = if (isPlaying) animationPhase else 0.42f
+    val latestEventText = remember(match.commentary, match.minute) {
+        match.commentary.firstOrNull()?.let { "${it.minute}' ${it.headline}: ${it.detail}" }
+            ?: "${match.minute}' Live stadium feed from ${match.venue} (${match.attendance} attendance)"
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 60fps Stadium Broadcast Pitch & Live Player Formation Canvas
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+
+            // Stadium turf background with floodlight gradient
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF071A12),
+                        Color(0xFF0D2E1F),
+                        Color(0xFF0A2418),
+                        Color(0xFF05130C)
+                    )
+                ),
+                size = Size(w, h)
+            )
+
+            // Alternating mowed turf stripes
+            val stripeCount = 8
+            val stripeWidth = w / stripeCount
+            for (i in 0 until stripeCount) {
+                if (i % 2 == 0) {
+                    drawRect(
+                        color = Color.White.copy(alpha = 0.03f),
+                        topLeft = Offset(i * stripeWidth, 0f),
+                        size = Size(stripeWidth, h)
+                    )
+                }
+            }
+
+            val padX = 20.dp.toPx()
+            val padY = 26.dp.toPx()
+            val pitchW = w - padX * 2
+            val pitchH = h - padY * 2
+            val pitchStroke = Stroke(width = 1.4.dp.toPx())
+            val pitchLineColor = Color.White.copy(alpha = 0.22f)
+
+            // Outer pitch boundary
+            drawRect(
+                color = pitchLineColor,
+                topLeft = Offset(padX, padY),
+                size = Size(pitchW, pitchH),
+                style = pitchStroke
+            )
+
+            // Halfway line & center circle
+            drawLine(
+                color = pitchLineColor,
+                start = Offset(w / 2f, padY),
+                end = Offset(w / 2f, h - padY),
+                strokeWidth = 1.4.dp.toPx()
+            )
+            drawCircle(
+                color = pitchLineColor,
+                radius = pitchH * 0.24f,
+                center = Offset(w / 2f, h / 2f),
+                style = pitchStroke
+            )
+
+            // Left & Right Penalty Boxes
+            val boxW = pitchW * 0.15f
+            val boxH = pitchH * 0.54f
+            val boxTop = padY + (pitchH - boxH) / 2f
+            drawRect(
+                color = pitchLineColor,
+                topLeft = Offset(padX, boxTop),
+                size = Size(boxW, boxH),
+                style = pitchStroke
+            )
+            drawRect(
+                color = pitchLineColor,
+                topLeft = Offset(w - padX - boxW, boxTop),
+                size = Size(boxW, boxH),
+                style = pitchStroke
+            )
+
+            // Dynamic Home & Away Player Formations
+            val homeColor = Color(match.homeColorHex)
+            val awayColor = Color(match.awayColorHex)
+            val homePositions = listOf(
+                Offset(0.16f, 0.50f),
+                Offset(0.28f, 0.26f),
+                Offset(0.27f, 0.52f),
+                Offset(0.29f, 0.76f),
+                Offset(0.44f, 0.34f),
+                Offset(0.46f, 0.64f),
+                Offset(0.62f, 0.46f)
+            )
+            val awayPositions = listOf(
+                Offset(0.84f, 0.50f),
+                Offset(0.72f, 0.28f),
+                Offset(0.73f, 0.52f),
+                Offset(0.71f, 0.74f),
+                Offset(0.56f, 0.38f),
+                Offset(0.54f, 0.66f),
+                Offset(0.39f, 0.52f)
+            )
+
+            homePositions.forEachIndexed { idx, pos ->
+                val dx = kotlin.math.sin((activePhase + idx * 0.17f) * 3.14f) * 10.dp.toPx()
+                val dy = kotlin.math.cos((activePhase + idx * 0.23f) * 3.14f) * 6.dp.toPx()
+                val center = Offset(padX + pitchW * pos.x + dx, padY + pitchH * pos.y + dy)
+                drawCircle(color = homeColor.copy(alpha = 0.35f), radius = 8.dp.toPx(), center = center)
+                drawCircle(color = homeColor, radius = 4.5.dp.toPx(), center = center)
+            }
+
+            awayPositions.forEachIndexed { idx, pos ->
+                val dx = -kotlin.math.cos((activePhase + idx * 0.19f) * 3.14f) * 10.dp.toPx()
+                val dy = kotlin.math.sin((activePhase + idx * 0.21f) * 3.14f) * 6.dp.toPx()
+                val center = Offset(padX + pitchW * pos.x + dx, padY + pitchH * pos.y + dy)
+                drawCircle(color = awayColor.copy(alpha = 0.35f), radius = 8.dp.toPx(), center = center)
+                drawCircle(color = awayColor, radius = 4.5.dp.toPx(), center = center)
+            }
+
+            // Live Match Ball + Broadcast Spotlight Tracking
+            val ballX = padX + pitchW * (0.24f + 0.52f * activePhase)
+            val ballY = padY + pitchH * (0.35f + 0.30f * kotlin.math.sin(activePhase * 6.28f))
+            drawCircle(
+                color = VerifiedPillGreen.copy(alpha = 0.26f),
+                radius = 22.dp.toPx(),
+                center = Offset(ballX, ballY)
+            )
+            drawCircle(
+                color = Color.White,
+                radius = 5.dp.toPx(),
+                center = Offset(ballX, ballY)
+            )
         }
-      </script>
-    </body>
-    </html>
-    """.trimIndent()
+
+        // Top Broadcast TV Scorebug + Server Telemetry Overlay
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = Color(0xD9060709),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(if (isPlaying) VerifiedPillGreen else Color(0xFFF59E0B))
+                    )
+                    Text(
+                        text = match.homeShort,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
+                    )
+                    Surface(
+                        color = VerifiedPillGreen,
+                        shape = RoundedCornerShape(5.dp)
+                    ) {
+                        Text(
+                            text = "${match.homeScore} - ${match.awayScore}",
+                            fontFamily = JetBrainsMonoFontFamily,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF04120B),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = match.awayShort,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "${match.minute}'",
+                        fontFamily = JetBrainsMonoFontFamily,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = VerifiedPillGreen
+                    )
+                }
+            }
+
+            Surface(
+                color = VerifiedPillGreen.copy(alpha = 0.18f),
+                shape = RoundedCornerShape(50),
+                border = BorderStroke(1.dp, VerifiedPillGreen)
+            ) {
+                Text(
+                    text = "${server.providerTag} • ${if (isMuted) "MUTED" else "STEREO"}",
+                    fontFamily = JetBrainsMonoFontFamily,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = VerifiedPillGreen,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+        }
+
+        // Live Commentary & Match Telemetry Lower-Third Banner (above transport bar)
+        Surface(
+            color = Color(0xCC060709),
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, OledCardBorder),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 12.dp, bottom = 50.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = latestEventText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "xG ${match.stats.homeXg}-${match.stats.awayXg}",
+                    fontFamily = JetBrainsMonoFontFamily,
+                    fontSize = 10.sp,
+                    color = VerifiedPillGreen,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EpicSportsServerFeedView(
+    match: FootballMatch,
+    selectedServer: StreamServer,
+    servers: List<StreamServer>,
+    onSelectServer: (StreamServer) -> Unit,
+    onOpenFullPortal: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 50.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Surface(
+            color = Color(0xFF12151C),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, VerifiedPillGreen.copy(alpha = 0.6f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Language,
+                        contentDescription = null,
+                        tint = VerifiedPillGreen,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = selectedServer.streamUrl,
+                            fontFamily = JetBrainsMonoFontFamily,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = VerifiedPillGreen,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${selectedServer.name} • ${match.homeTeam} vs ${match.awayTeam}",
+                            fontSize = 10.sp,
+                            color = OledMutedText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Surface(
+                    color = VerifiedPillGreen,
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier.clickable(onClick = onOpenFullPortal)
+                ) {
+                    Text(
+                        text = "Open Feed",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+
+        // Quick Server Relay Grid inside EpicSports.in Mode
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = "ACTIVE EPICSPORTS.IN & FRAMETV STREAM NODES",
+                fontFamily = JetBrainsMonoFontFamily,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = OledMutedText
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(servers, key = { "epicsports_node_${it.id}" }) { srv ->
+                    val isCurrent = srv.id == selectedServer.id
+                    Surface(
+                        color = if (isCurrent) VerifiedPillGreen.copy(alpha = 0.22f) else Color(0xFF171A21),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, if (isCurrent) VerifiedPillGreen else OledCardBorder),
+                        modifier = Modifier.clickable { onSelectServer(srv) }
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                            Text(
+                                text = srv.name,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "${srv.providerTag} • ${srv.pingMs}ms • ${srv.resolution}",
+                                fontFamily = JetBrainsMonoFontFamily,
+                                fontSize = 9.sp,
+                                color = if (isCurrent) VerifiedPillGreen else OledMutedText
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

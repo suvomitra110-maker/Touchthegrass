@@ -29,6 +29,7 @@ import com.example.model.StandingsUiState
 import com.example.model.StreamServer
 import com.example.network.GeminiRepository
 import com.example.network.StandingsRepository
+import com.example.notifications.FcmPushManager
 import com.example.notifications.MatchNotificationHelper
 import com.example.security.EncryptedStreamToken
 import com.example.security.SecurityAuditReport
@@ -71,6 +72,10 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _favoriteClub = MutableStateFlow("Inter Miami CF")
     val favoriteClub: StateFlow<String> = _favoriteClub.asStateFlow()
+
+    val fcmToken: StateFlow<String> = FcmPushManager.fcmToken
+    val fcmSubscribedTopics: StateFlow<Set<String>> = FcmPushManager.subscribedTopics
+    val favoritedTeams: StateFlow<Set<String>> = FcmPushManager.favoritedTeams
 
     private val _profilePictureId = MutableStateFlow("avatar_messi_goat")
     val profilePictureId: StateFlow<String> = _profilePictureId.asStateFlow()
@@ -151,6 +156,16 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
     private val _liveTickerEnabled = MutableStateFlow(true)
     val liveTickerEnabled: StateFlow<Boolean> = _liveTickerEnabled.asStateFlow()
 
+    // --- Dynamic Island & Android Notification Bar Pinned Scoreboard State ---
+    private val _pinnedMatchId = MutableStateFlow<String?>(null)
+    val pinnedMatchId: StateFlow<String?> = _pinnedMatchId.asStateFlow()
+
+    private val _isPinnedToNotificationBar = MutableStateFlow(true)
+    val isPinnedToNotificationBar: StateFlow<Boolean> = _isPinnedToNotificationBar.asStateFlow()
+
+    private val _dynamicIslandGoalFlash = MutableStateFlow<String?>(null)
+    val dynamicIslandGoalFlash: StateFlow<String?> = _dynamicIslandGoalFlash.asStateFlow()
+
     private val _inAppAlertBanner = MutableStateFlow<String?>(null)
     val inAppAlertBanner: StateFlow<String?> = _inAppAlertBanner.asStateFlow()
 
@@ -201,9 +216,11 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         MatchNotificationHelper.ensureChannelsCreated(application.applicationContext)
+        FcmPushManager.initializeFcm(application.applicationContext, _favoriteClub.value)
         seedDefaultAlertsIfNeeded()
         initializeSecurityShield()
         _selectedVisionBitmap.value = createTacticalBoardBitmap()
+        syncPinnedScoreboardNotification()
         startLiveFootballTicker()
         refreshStandings()
     }
@@ -266,6 +283,8 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
                     if (profile != null) {
                         _userName.value = profile.username
                         _favoriteClub.value = profile.favoriteClub
+                        FcmPushManager.syncPrimaryFavoriteClub(profile.favoriteClub)
+                        autoSubscribeMatchesForClub(profile.favoriteClub)
                         _profilePictureId.value = profile.profilePictureId
                         if (!profile.photoUrl.isNullOrBlank()) {
                             _userPhotoUrl.value = profile.photoUrl
@@ -306,8 +325,111 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
         _userName.value = cleanName
         _favoriteClub.value = cleanClub
         _profilePictureId.value = newAvatarId
+        FcmPushManager.syncPrimaryFavoriteClub(cleanClub)
+        autoSubscribeMatchesForClub(cleanClub)
         syncProfileToFirestoreIfSignedIn()
-        showBanner("Updated Profile: $cleanName • $cleanClub")
+        showBanner("Updated Profile & FCM Alerts: $cleanName • ★ $cleanClub")
+    }
+
+    fun toggleFavoriteClubFcm(clubName: String) {
+        val nowFavorited = FcmPushManager.toggleFavoriteTeamFcm(clubName)
+        if (nowFavorited) {
+            _favoriteClub.value = clubName
+            autoSubscribeMatchesForClub(clubName)
+            syncProfileToFirestoreIfSignedIn()
+            showBanner("★ FCM Subscribed: $clubName (Goals & Kickoffs)")
+        } else {
+            showBanner("Unsubscribed FCM topic for $clubName")
+        }
+    }
+
+    private fun autoSubscribeMatchesForClub(clubName: String) {
+        viewModelScope.launch {
+            _matches.value.filter { match ->
+                match.homeTeam.contains(clubName, ignoreCase = true) ||
+                    match.awayTeam.contains(clubName, ignoreCase = true) ||
+                    clubName.contains(match.homeTeam, ignoreCase = true) ||
+                    clubName.contains(match.awayTeam, ignoreCase = true)
+            }.forEach { match ->
+                localRepo.upsertMatchAlert(
+                    MatchAlertEntity(
+                        matchId = match.id,
+                        matchLabel = "${match.homeTeam} vs ${match.awayTeam}",
+                        competitionName = "${match.competition.displayName} • ★ Favorite Club",
+                        notifyMajorGoals = true,
+                        notifyKickoff = true
+                    )
+                )
+            }
+        }
+    }
+
+    fun triggerFavoriteClubFcmPush(isGoal: Boolean) {
+        val favClub = _favoriteClub.value
+        val favMatch = _matches.value.find { match ->
+            FcmPushManager.isTeamFavorited(match.homeTeam, favClub) ||
+                FcmPushManager.isTeamFavorited(match.awayTeam, favClub)
+        } ?: _matches.value.first()
+
+        val isHomeFav = FcmPushManager.isTeamFavorited(favMatch.homeTeam, favClub)
+        if (isGoal) {
+            triggerLiveMajorGoalEvent(favMatch, scoringHome = isHomeFav)
+        } else {
+            triggerMatchKickoffAlert(favMatch)
+        }
+    }
+
+    fun resolveDynamicIslandMatch(): FootballMatch {
+        val pinnedId = _pinnedMatchId.value
+        if (pinnedId != null) {
+            _matches.value.find { it.id == pinnedId }?.let { return it }
+        }
+        val favClub = _favoriteClub.value
+        return _matches.value.find { match ->
+            FcmPushManager.isTeamFavorited(match.homeTeam, favClub) ||
+                FcmPushManager.isTeamFavorited(match.awayTeam, favClub)
+        } ?: _matches.value.first()
+    }
+
+    fun pinMatchToScoreboard(matchId: String?, alsoPinNotificationBar: Boolean = true) {
+        _pinnedMatchId.value = matchId
+        if (alsoPinNotificationBar) {
+            _isPinnedToNotificationBar.value = true
+        }
+        syncPinnedScoreboardNotification()
+        val targetMatch = resolveDynamicIslandMatch()
+        if (matchId == null) {
+            showBanner("★ Dynamic Island locked to Favorite Club: ${targetMatch.homeShort} vs ${targetMatch.awayShort}")
+        } else {
+            showBanner("📌 Pinned ${targetMatch.homeShort} ${targetMatch.homeScore}-${targetMatch.awayScore} ${targetMatch.awayShort} to Dynamic Island & Notification Bar")
+        }
+    }
+
+    fun togglePinScoreboardToNotificationBar() {
+        val next = !_isPinnedToNotificationBar.value
+        _isPinnedToNotificationBar.value = next
+        if (next) {
+            syncPinnedScoreboardNotification()
+            val m = resolveDynamicIslandMatch()
+            showBanner("📌 Live Scoreboard Pinned to Android Notification Bar (${m.homeShort} ${m.homeScore}-${m.awayScore} ${m.awayShort})")
+        } else {
+            MatchNotificationHelper.cancelPinnedScoreboardNotification(getApplication())
+            showBanner("Unpinned Live Scoreboard from Android Notification Bar")
+        }
+    }
+
+    fun syncPinnedScoreboardNotification() {
+        if (!_isPinnedToNotificationBar.value) return
+        val match = resolveDynamicIslandMatch()
+        val favClub = _favoriteClub.value
+        val isFav = FcmPushManager.isTeamFavorited(match.homeTeam, favClub) ||
+            FcmPushManager.isTeamFavorited(match.awayTeam, favClub)
+        MatchNotificationHelper.showOrUpdatePinnedScoreboardNotification(
+            context = getApplication(),
+            match = match,
+            isFavoriteClub = isFav,
+            streamServerName = _selectedMatchServer.value.name
+        )
     }
 
     fun updateCustomAvatarBitmap(bitmap: Bitmap) {
@@ -572,6 +694,10 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     }
                 }
+                syncPinnedScoreboardNotification()
+                if (tickCount == 2 || tickCount % 8 == 0) {
+                    triggerFavoriteClubFcmPush(isGoal = true)
+                }
             }
         }
     }
@@ -722,24 +848,48 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
             }
 
             val scoreline = "${match.homeTeam} $newHomeScore - $newAwayScore ${match.awayTeam} ($minute')"
+            val favClub = _favoriteClub.value
+            val isFavoriteTeamGoal = FcmPushManager.isTeamFavorited(scoringTeam, favClub) ||
+                FcmPushManager.isTeamFavorited(match.homeTeam, favClub) ||
+                FcmPushManager.isTeamFavorited(match.awayTeam, favClub)
+
             MatchNotificationHelper.sendMajorGoalNotification(
                 context = getApplication(),
                 competition = match.competition.displayName,
                 scoreline = scoreline,
                 headline = headline,
-                detail = detail
+                detail = detail,
+                isFavoriteTeam = isFavoriteTeamGoal
             )
+
+            syncPinnedScoreboardNotification()
+
+            val flashText = if (isFavoriteTeamGoal) {
+                "★ FAVORITE TEAM GOAL! $scorer ($minute') • ${match.homeShort} $newHomeScore - $newAwayScore ${match.awayShort}"
+            } else {
+                "⚽ GOAL! $scorer ($minute') • ${match.homeShort} $newHomeScore - $newAwayScore ${match.awayShort}"
+            }
+            viewModelScope.launch {
+                _dynamicIslandGoalFlash.value = flashText
+                delay(5_500L)
+                if (_dynamicIslandGoalFlash.value == flashText) {
+                    _dynamicIslandGoalFlash.value = null
+                }
+            }
 
             localRepo.logNotification(
                 NotificationLogEntity(
-                    alertType = "MAJOR_GOAL",
+                    alertType = if (isFavoriteTeamGoal) "FAV_TEAM_GOAL" else "MAJOR_GOAL",
                     competition = match.competition.displayName,
-                    headline = "⚽ GOAL! $scoreline",
+                    headline = if (isFavoriteTeamGoal) "★ FAV GOAL! $scoreline" else "⚽ GOAL! $scoreline",
                     body = "$headline — $detail"
                 )
             )
 
-            showBanner("⚽ GOAL ALERT SENT: $scoreline — $scorer!")
+            showBanner(
+                if (isFavoriteTeamGoal) "★ FAVORITE TEAM SCORED: $scoreline — $scorer!"
+                else "⚽ GOAL ALERT SENT: $scoreline — $scorer!"
+            )
         }
     }
 
