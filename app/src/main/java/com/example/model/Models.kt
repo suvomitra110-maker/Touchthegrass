@@ -90,7 +90,9 @@ data class MatchStats(
     val awayCorners: Int,
     val homePassAccuracy: Int,
     val awayPassAccuracy: Int,
-    val homeMomentum: Float // 0.1f .. 0.9f
+    val homeMomentum: Float, // 0.1f .. 0.9f
+    val homeTotalShots: Int = homeShotsOnTarget * 2 + 3,
+    val awayTotalShots: Int = awayShotsOnTarget * 2 + 2
 )
 
 data class FootballMatch(

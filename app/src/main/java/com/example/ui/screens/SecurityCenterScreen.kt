@@ -286,20 +286,20 @@ fun SecurityCenterScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Anti-Capture & Overlay Shield (FLAG_SECURE)",
+                                text = "Universal Stream Display (FLAG_SECURE Block Removed)",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = TextPrimary
                             )
                             Text(
-                                text = "Blocks screen recording, unauthorized screenshots, and tapjacking overlays on MainActivity.",
+                                text = "FLAG_SECURE display block is removed so live match streams are visible on all devices, external displays, and emulators.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Switch(
-                            checked = flagSecureEnabled,
-                            onCheckedChange = onToggleFlagSecure,
+                            checked = !flagSecureEnabled,
+                            onCheckedChange = { onToggleFlagSecure(false) },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = ObsidianBg,
                                 checkedTrackColor = PitchEmerald

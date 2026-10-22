@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.view.WindowManager
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,12 +49,14 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -271,6 +275,11 @@ private fun ActiveCinemaPlayerCard(
     onToggleWatchlist: () -> Unit,
     onSpeakSynopsis: () -> Unit
 ) {
+    val context = LocalContext.current
+    LaunchedEffect(media.id, selectedServer.id, isPlaying) {
+        (context as? Activity)?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
     val primaryCol = Color(media.primaryColorHex)
     val secondaryCol = Color(media.secondaryColorHex)
 

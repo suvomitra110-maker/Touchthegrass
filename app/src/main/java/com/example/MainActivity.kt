@@ -111,6 +111,8 @@ enum class FrameXTab(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Ensure FLAG_SECURE display block is removed so live match streams are visible on all devices
+        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         setContent {
             FrameXTVTheme {
@@ -203,14 +205,8 @@ fun FrameXTVApp(
 
     LaunchedEffect(flagSecureEnabled) {
         val activity = context as? Activity ?: return@LaunchedEffect
-        if (flagSecureEnabled) {
-            activity.window.setFlags(
-                WindowManager.LayoutParams.FLAG_SECURE,
-                WindowManager.LayoutParams.FLAG_SECURE
-            )
-        } else {
-            activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        }
+        // Always keep FLAG_SECURE cleared so live match streams are visible on all devices, external displays, and emulators
+        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
     val matches by viewModel.matches.collectAsStateWithLifecycle()
@@ -469,6 +465,7 @@ fun FrameXTVApp(
                                             viewModel.togglePinScoreboardToNotificationBar()
                                         }
                                     },
+                                    onTriggerLiveStatEvent = viewModel::triggerLiveStatEvent,
                                     onOpenStandings = { competition ->
                                         viewModel.selectStandingsLeague(competition)
                                         currentTab = FrameXTab.STANDINGS

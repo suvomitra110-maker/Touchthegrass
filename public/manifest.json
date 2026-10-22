@@ -1,0 +1,10 @@
+{
+  "name": "TouchTheGrass • 4K Live Football & Standings",
+  "short_name": "TouchTheGrass",
+  "description": "4K HDR Live Football Broadcast Hub, Multi-Server Redundancy (live.epicsports.in/?m=1 & FrameTV), Dynamic Island Scoreboard & Real-Time Match Telemetry.",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#0B0C0E",
+  "theme_color": "#10B981",
+  "orientation": "portrait-primary"
+}

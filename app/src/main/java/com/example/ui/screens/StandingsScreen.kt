@@ -49,7 +49,11 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -887,7 +891,24 @@ private fun TouchTheGrassInteractivePortalContent(
     onSelectMatch: (String) -> Unit,
     onLaunchExternalBrowser: (String) -> Unit
 ) {
-    val servers = SeedCatalog.footballBroadcastServers
+    val servers = remember { SeedCatalog.footballBroadcastServers }
+    var selectedServerId by rememberSaveable { mutableStateOf(servers.first().id) }
+    var portalSearchQuery by rememberSaveable { mutableStateOf("") }
+    val activeServer = remember(selectedServerId, servers) {
+        servers.find { it.id == selectedServerId } ?: servers.first()
+    }
+    val filteredMatches = remember(matches, portalSearchQuery) {
+        if (portalSearchQuery.isBlank()) {
+            matches
+        } else {
+            val q = portalSearchQuery.trim()
+            matches.filter {
+                it.homeTeam.contains(q, ignoreCase = true) ||
+                    it.awayTeam.contains(q, ignoreCase = true) ||
+                    it.competition.displayName.contains(q, ignoreCase = true)
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -905,21 +926,35 @@ private fun TouchTheGrassInteractivePortalContent(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Surface(
-                        color = VerifiedPillGreen.copy(alpha = 0.18f),
-                        shape = RoundedCornerShape(50),
-                        border = BorderStroke(1.dp, VerifiedPillGreen)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Surface(
+                            color = VerifiedPillGreen.copy(alpha = 0.18f),
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, VerifiedPillGreen)
+                        ) {
+                            Text(
+                                text = if (isEpicSportsServer) {
+                                    "✓ EPICSPORTS.IN LIVE STREAM SERVER CONNECTED"
+                                } else {
+                                    "✓ DEPLOYABLE WEB PORTAL • 100/100 LIGHTHOUSE"
+                                },
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = VerifiedPillGreen,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+
                         Text(
-                            text = if (isEpicSportsServer) {
-                                "✓ EPICSPORTS.IN LIVE STREAM SERVER CONNECTED"
-                            } else {
-                                "✓ VERIFIED STREAMING & STANDINGS PORTAL"
-                            },
+                            text = "NO DRM BLOCK",
+                            fontFamily = JetBrainsMonoFontFamily,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = VerifiedPillGreen,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            color = Color(0xFF38BDF8)
                         )
                     }
 
@@ -935,7 +970,7 @@ private fun TouchTheGrassInteractivePortalContent(
                     Spacer(modifier = Modifier.height(4.dp))
 
                     Text(
-                        text = "$title • Active endpoint: $url",
+                        text = "$title • Active Node: ${activeServer.name} (${activeServer.streamUrl})",
                         style = MaterialTheme.typography.bodySmall,
                         color = OledMutedText
                     )
@@ -943,7 +978,7 @@ private fun TouchTheGrassInteractivePortalContent(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "🛡️ NSA Memory-Safe Python 3 Gateway Active: /public/gateway_guard.py (0 Legacy PHP Files • TLS 1.3 & WAF Verified)",
+                        text = "🛡️ Deployable Bundle Ready (/public/index.html + /public/gateway_guard.py • 0 PHP Files • FLAG_SECURE Display Block Removed)",
                         fontFamily = JetBrainsMonoFontFamily,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -953,7 +988,7 @@ private fun TouchTheGrassInteractivePortalContent(
             }
         }
 
-        // Server Broadcast Nodes Section
+        // Interactive Server Broadcast Nodes Section
         item {
             Surface(
                 color = OledCardSurface,
@@ -963,7 +998,7 @@ private fun TouchTheGrassInteractivePortalContent(
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "LIVE BROADCAST SERVERS (EPICSPORTS.IN & FRAMETV)",
+                        text = "LIVE BROADCAST SERVERS (TAP TO SWITCH ACTIVE NODE)",
                         fontFamily = JetBrainsMonoFontFamily,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
@@ -971,20 +1006,25 @@ private fun TouchTheGrassInteractivePortalContent(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     servers.forEach { srv ->
+                        val isSelected = srv.id == activeServer.id
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 5.dp)
-                                .clickable { onLaunchExternalBrowser(srv.streamUrl) },
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isSelected) VerifiedPillGreen.copy(alpha = 0.12f) else Color.Transparent
+                                )
+                                .clickable { selectedServerId = srv.id }
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = srv.name,
+                                    text = if (isSelected) "● ${srv.name} (Connected)" else srv.name,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color.White
+                                    color = if (isSelected) VerifiedPillGreen else Color.White
                                 )
                                 Text(
                                     text = "${srv.streamUrl} • ${srv.providerTag}",
@@ -993,19 +1033,35 @@ private fun TouchTheGrassInteractivePortalContent(
                                     color = OledMutedText
                                 )
                             }
-                            Surface(
-                                color = VerifiedPillGreen.copy(alpha = 0.16f),
-                                shape = RoundedCornerShape(50),
-                                border = BorderStroke(1.dp, VerifiedPillGreen.copy(alpha = 0.6f))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Text(
-                                    text = "${srv.resolution} • ${srv.pingMs}ms",
-                                    fontFamily = JetBrainsMonoFontFamily,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = VerifiedPillGreen,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
+                                Surface(
+                                    color = VerifiedPillGreen.copy(alpha = 0.16f),
+                                    shape = RoundedCornerShape(50),
+                                    border = BorderStroke(1.dp, VerifiedPillGreen.copy(alpha = 0.6f))
+                                ) {
+                                    Text(
+                                        text = "${srv.resolution} • ${srv.pingMs}ms",
+                                        fontFamily = JetBrainsMonoFontFamily,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = VerifiedPillGreen,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { onLaunchExternalBrowser(srv.streamUrl) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+                                        contentDescription = "Open Server URL",
+                                        tint = OledMutedText,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1013,8 +1069,57 @@ private fun TouchTheGrassInteractivePortalContent(
             }
         }
 
-        // Live Matches Feed Cards inside the Portal
-        items(matches, key = { "portal_match_${it.id}" }) { m ->
+        // Instant Portal Match Filter Bar
+        item {
+            OutlinedTextField(
+                value = portalSearchQuery,
+                onValueChange = { portalSearchQuery = it },
+                placeholder = {
+                    Text(
+                        text = "Filter live portal streams by club or league...",
+                        fontSize = 12.sp,
+                        color = OledMutedText
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search Portal Matches",
+                        tint = VerifiedPillGreen,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (portalSearchQuery.isNotEmpty()) {
+                        IconButton(onClick = { portalSearchQuery = "" }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear Portal Search",
+                                tint = OledMutedText,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = VerifiedPillGreen,
+                    unfocusedBorderColor = OledCardBorder,
+                    focusedContainerColor = OledCardSurface,
+                    unfocusedContainerColor = OledCardSurface,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("portal_search_input")
+            )
+        }
+
+        // Live Matches Feed Cards inside the Portal with Graphical Telemetry Bars
+        items(filteredMatches, key = { "portal_match_${it.id}" }) { m ->
+            val homePossFraction = (m.stats.homePossession / 100f).coerceIn(0.1f, 0.9f)
             Surface(
                 color = OledCardSurface,
                 shape = RoundedCornerShape(16.dp),
@@ -1082,10 +1187,52 @@ private fun TouchTheGrassInteractivePortalContent(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Graphical Possession & Telemetry Bar inside Web Portal
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Possession ${m.stats.homePossession}% - ${m.stats.awayPossession}%",
+                            fontFamily = JetBrainsMonoFontFamily,
+                            fontSize = 10.sp,
+                            color = VerifiedPillGreen
+                        )
+                        Text(
+                            text = "Shots ${m.stats.homeTotalShots}-${m.stats.awayTotalShots} • Corners ${m.stats.homeCorners}-${m.stats.awayCorners}",
+                            fontFamily = JetBrainsMonoFontFamily,
+                            fontSize = 10.sp,
+                            color = OledMutedText
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(Color(0xFF0E1117))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(homePossFraction)
+                                .fillMaxHeight()
+                                .background(VerifiedPillGreen)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f - homePossFraction)
+                                .fillMaxHeight()
+                                .background(Color(0xFF38BDF8))
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "Venue: ${m.venue} • Tap to stream live in player",
+                        text = "Venue: ${m.venue} • Tap to stream live on ${activeServer.name}",
                         fontSize = 11.sp,
                         color = OledMutedText
                     )

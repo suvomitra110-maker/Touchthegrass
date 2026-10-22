@@ -509,9 +509,10 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
 
     // --- Cyber Shield Security Actions ---
     fun toggleFlagSecure(enabled: Boolean) {
-        _flagSecureEnabled.value = enabled
+        // Keep FLAG_SECURE display block removed so live match streams are always visible on all devices
+        _flagSecureEnabled.value = false
         val updated = securityShield.runFullSecurityAudit(
-            flagSecureEnabled = enabled,
+            flagSecureEnabled = false,
             wafEnabled = _wafFirewallEnabled.value
         )
         _securityAuditReport.value = updated
@@ -519,20 +520,13 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
             localRepo.logSecurityEvent(
                 SecurityAuditLogEntity(
                     eventType = "SHIELD_CONFIG",
-                    severity = "HIGH_SECURITY",
-                    title = if (enabled) "FLAG_SECURE Anti-Capture Shield Enabled" else "FLAG_SECURE Shield Paused",
-                    detail = if (enabled) {
-                        "WindowManager.LayoutParams.FLAG_SECURE enforced against screen recording and overlay spyware."
-                    } else {
-                        "Screen capture protection temporarily relaxed by user."
-                    }
+                    severity = "VERIFIED",
+                    title = "Universal Stream Visibility Active (FLAG_SECURE Block Removed)",
+                    detail = "WindowManager.LayoutParams.FLAG_SECURE is cleared so live match streams render on all devices and displays."
                 )
             )
         }
-        showBanner(
-            if (enabled) "🛡️ Anti-Capture & Overlay Shield (FLAG_SECURE) Enabled"
-            else "⚠️ FLAG_SECURE Screen Capture Shield Paused"
-        )
+        showBanner("✅ Universal Stream Display Active (FLAG_SECURE Block Removed for All Devices)")
     }
 
     fun toggleWafFirewall(enabled: Boolean) {
@@ -683,10 +677,22 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
                             match.commentary
                         }
 
+                        val possShift = ((tickCount + index) % 3 - 1)
+                        val newHomePoss = (match.stats.homePossession + possShift).coerceIn(32, 68)
+                        val newAwayPoss = 100 - newHomePoss
+                        val addHomeShot = if ((tickCount + index) % 3 == 0) 1 else 0
+                        val addAwayShot = if ((tickCount + index) % 4 == 0) 1 else 0
+                        val addHomeCorner = if ((tickCount + index) % 5 == 0) 1 else 0
+
                         match.copy(
                             minute = nextMin,
                             addedTime = nextAdded,
                             stats = match.stats.copy(
+                                homePossession = newHomePoss,
+                                awayPossession = newAwayPoss,
+                                homeTotalShots = match.stats.homeTotalShots + addHomeShot,
+                                awayTotalShots = match.stats.awayTotalShots + addAwayShot,
+                                homeCorners = match.stats.homeCorners + addHomeCorner,
                                 homeMomentum = newMomentum,
                                 homeXg = (match.stats.homeXg + 0.02f).coerceAtMost(4.5f)
                             ),
@@ -695,9 +701,6 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
                 syncPinnedScoreboardNotification()
-                if (tickCount == 2 || tickCount % 8 == 0) {
-                    triggerFavoriteClubFcmPush(isGoal = true)
-                }
             }
         }
     }
@@ -838,6 +841,8 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
                             stats = item.stats.copy(
                                 homeShotsOnTarget = if (scoringHome) item.stats.homeShotsOnTarget + 1 else item.stats.homeShotsOnTarget,
                                 awayShotsOnTarget = if (!scoringHome) item.stats.awayShotsOnTarget + 1 else item.stats.awayShotsOnTarget,
+                                homeTotalShots = if (scoringHome) item.stats.homeTotalShots + 1 else item.stats.homeTotalShots,
+                                awayTotalShots = if (!scoringHome) item.stats.awayTotalShots + 1 else item.stats.awayTotalShots,
                                 homeXg = if (scoringHome) item.stats.homeXg + 0.42f else item.stats.homeXg,
                                 awayXg = if (!scoringHome) item.stats.awayXg + 0.42f else item.stats.awayXg
                             ),
@@ -917,6 +922,80 @@ class FrameXViewModel(application: Application) : AndroidViewModel(application) 
 
             showBanner("🔔 KICKOFF PUSH ALERT SENT: $matchTitle (${match.competition.shortTag})")
         }
+    }
+
+    fun triggerLiveStatEvent(matchId: String, statType: String, isHome: Boolean) {
+        _matches.update { currentList ->
+            currentList.map { match ->
+                if (match.id != matchId) return@map match
+                val teamName = if (isHome) match.homeTeam else match.awayTeam
+                val keyPlayer = if (isHome) match.homeKeyPlayers.first() else match.awayKeyPlayers.first()
+
+                when (statType.uppercase()) {
+                    "POSSESSION" -> {
+                        val nextHomePoss = if (isHome) {
+                            (match.stats.homePossession + 3).coerceIn(25, 75)
+                        } else {
+                            (match.stats.homePossession - 3).coerceIn(25, 75)
+                        }
+                        val nextAwayPoss = 100 - nextHomePoss
+                        match.copy(
+                            stats = match.stats.copy(
+                                homePossession = nextHomePoss,
+                                awayPossession = nextAwayPoss,
+                                homeMomentum = (nextHomePoss / 100f).coerceIn(0.2f, 0.8f)
+                            )
+                        )
+                    }
+                    "CORNER" -> {
+                        val nextHomeCorners = if (isHome) match.stats.homeCorners + 1 else match.stats.homeCorners
+                        val nextAwayCorners = if (!isHome) match.stats.awayCorners + 1 else match.stats.awayCorners
+                        val cornerNote = CommentaryEvent(
+                            id = "corner_${System.currentTimeMillis()}",
+                            minute = match.minute,
+                            type = CommentaryType.TACTICAL,
+                            headline = "Corner Kick awarded to $teamName (${match.minute}')",
+                            detail = "$keyPlayer steps up to whip an in-swinging corner delivery into the six-yard box."
+                        )
+                        match.copy(
+                            stats = match.stats.copy(
+                                homeCorners = nextHomeCorners,
+                                awayCorners = nextAwayCorners,
+                                homeXg = if (isHome) match.stats.homeXg + 0.06f else match.stats.homeXg,
+                                awayXg = if (!isHome) match.stats.awayXg + 0.06f else match.stats.awayXg
+                            ),
+                            commentary = listOf(cornerNote) + match.commentary.take(14)
+                        )
+                    }
+                    else -> {
+                        // SHOT attempt
+                        val nextHomeTotal = if (isHome) match.stats.homeTotalShots + 1 else match.stats.homeTotalShots
+                        val nextAwayTotal = if (!isHome) match.stats.awayTotalShots + 1 else match.stats.awayTotalShots
+                        val nextHomeOT = if (isHome) match.stats.homeShotsOnTarget + 1 else match.stats.homeShotsOnTarget
+                        val nextAwayOT = if (!isHome) match.stats.awayShotsOnTarget + 1 else match.stats.awayShotsOnTarget
+                        val shotNote = CommentaryEvent(
+                            id = "shot_${System.currentTimeMillis()}",
+                            minute = match.minute,
+                            type = CommentaryType.MAJOR_CHANCE,
+                            headline = "Shot Attempt on Target by $keyPlayer for $teamName (${match.minute}')",
+                            detail = "$keyPlayer fires a stinging drive from 20 yards forcing a fingertip save!"
+                        )
+                        match.copy(
+                            stats = match.stats.copy(
+                                homeTotalShots = nextHomeTotal,
+                                awayTotalShots = nextAwayTotal,
+                                homeShotsOnTarget = nextHomeOT,
+                                awayShotsOnTarget = nextAwayOT,
+                                homeXg = if (isHome) match.stats.homeXg + 0.14f else match.stats.homeXg,
+                                awayXg = if (!isHome) match.stats.awayXg + 0.14f else match.stats.awayXg
+                            ),
+                            commentary = listOf(shotNote) + match.commentary.take(14)
+                        )
+                    }
+                }
+            }
+        }
+        syncPinnedScoreboardNotification()
     }
 
     fun clearNotificationHistory() {

@@ -1139,10 +1139,10 @@ private fun SettingsScreenContent(
         SettingsSwitchRow(
             icon = Icons.Default.Face,
             circleBrush = Brush.linearGradient(listOf(Color(0xFFFBBF24), Color(0xFFD97706))),
-            title = "Face ID & Screen Shield",
-            subtitle = null,
-            checked = flagSecureEnabled,
-            onCheckedChange = onToggleFlagSecure
+            title = "Universal Stream Display (All Devices)",
+            subtitle = "FLAG_SECURE display block removed so live match streams are visible everywhere",
+            checked = !flagSecureEnabled,
+            onCheckedChange = { onToggleFlagSecure(false) }
         )
         Spacer(modifier = Modifier.height(14.dp))
         SettingsSwitchRow(

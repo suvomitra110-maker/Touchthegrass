@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -36,6 +38,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
@@ -68,6 +71,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -81,6 +85,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -97,6 +102,8 @@ import com.example.model.FootballMatch
 import com.example.model.FootballThemeOption
 import com.example.model.SeedCatalog
 import com.example.model.StreamServer
+import com.example.ui.components.LiveMatchStatsOverlayContent
+import com.example.ui.components.LiveMatchStatsOverlayDialog
 import com.example.ui.components.OledCardBorder
 import com.example.ui.components.OledCardSurface
 import com.example.ui.components.OledMutedText
@@ -138,11 +145,13 @@ fun LiveFootballScreen(
     isPinnedToNotificationBar: Boolean = true,
     onPinMatchToScoreboard: (String?) -> Unit = {},
     onTogglePinToNotificationBar: () -> Unit = {},
+    onTriggerLiveStatEvent: (String, String, Boolean) -> Unit = { _, _, _ -> },
     onOpenStandings: (FootballCompetition) -> Unit = {},
     onOpenWebPortal: (String, String) -> Unit = { _, _ -> }
 ) {
     var showLeagueToggleDrawer by rememberSaveable { mutableStateOf(false) }
     var showCommentaryAndTts by rememberSaveable { mutableStateOf(false) }
+    var statsOverlayMatchId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val leagueFilteredPool = matches.filter { it.competition in enabledLeagues }
         .ifEmpty { matches }
@@ -533,6 +542,12 @@ fun LiveFootballScreen(
                         onPinMatchToScoreboard(activeMatch.id)
                     }
                 },
+                onOpenStatsOverlayModal = {
+                    statsOverlayMatchId = activeMatch.id
+                },
+                onSimulateLiveStat = { statType, isHome ->
+                    onTriggerLiveStatEvent(activeMatch.id, statType, isHome)
+                },
                 onOpenEpicSportsPortal = { title, url ->
                     onOpenWebPortal(title, url)
                 }
@@ -633,15 +648,49 @@ fun LiveFootballScreen(
             }
         }
 
-        // 4. "Match Overview" Serif Header + 4-Tile Metric Grid (Exact IMG_8276 Account Overview Style)
+        // 4. "Match Overview" Serif Header + Interactive Overlay Detail Launcher + 4-Tile Metric Grid
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Match Overview",
-                    fontFamily = FontFamily.Serif,
-                    fontSize = 20.sp,
-                    color = Color.White
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Match Overview",
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 20.sp,
+                        color = Color.White
+                    )
+
+                    Surface(
+                        color = VerifiedPillGreen.copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, VerifiedPillGreen.copy(alpha = 0.7f)),
+                        modifier = Modifier
+                            .clickable { statsOverlayMatchId = activeMatch.id }
+                            .testTag("open_match_overview_overlay_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Analytics,
+                                contentDescription = "Open Interactive Stats Overlay",
+                                tint = VerifiedPillGreen,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = "Live Stats Overlay",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = VerifiedPillGreen,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -650,23 +699,31 @@ fun LiveFootballScreen(
                     OverviewStatTile(
                         label = "Possession",
                         value = "${activeMatch.stats.homePossession}%",
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { statsOverlayMatchId = activeMatch.id }
+                    )
+                    OverviewStatTile(
+                        label = "Shot Attempts",
+                        value = "${activeMatch.stats.homeTotalShots}-${activeMatch.stats.awayTotalShots}",
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { statsOverlayMatchId = activeMatch.id }
+                    )
+                    OverviewStatTile(
+                        label = "Corners",
+                        value = "${activeMatch.stats.homeCorners}-${activeMatch.stats.awayCorners}",
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { statsOverlayMatchId = activeMatch.id }
                     )
                     OverviewStatTile(
                         label = "xG Threat",
                         value = String.format("%.2f", activeMatch.stats.homeXg),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OverviewStatTile(
-                        label = "Ping",
-                        value = "${selectedServer.pingMs}ms",
-                        modifier = Modifier.weight(1f)
-                    )
-                    OverviewStatTile(
-                        label = "Feed Rating",
-                        value = "4.9",
                         showStar = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { statsOverlayMatchId = activeMatch.id }
                     )
                 }
             }
@@ -736,11 +793,26 @@ fun LiveFootballScreen(
                             onPinMatchToScoreboard(match.id)
                         }
                     },
+                    onOpenStatsOverlay = {
+                        statsOverlayMatchId = match.id
+                    },
                     onClick = { onSelectMatch(match.id) }
                 )
             }
         }
         }
+    }
+
+    // Translucent Live Match Overlay Detail View Dialog (Possession %, Shot Attempts, Corner Kicks)
+    val overlayMatch = matches.find { it.id == statsOverlayMatchId }
+    if (overlayMatch != null) {
+        LiveMatchStatsOverlayDialog(
+            match = overlayMatch,
+            onDismiss = { statsOverlayMatchId = null },
+            onSimulateLiveStat = { statType, isHome ->
+                onTriggerLiveStatEvent(overlayMatch.id, statType, isHome)
+            }
+        )
     }
 }
 
@@ -789,6 +861,7 @@ private fun CleanOledMatchRowCard(
     isFavoriteClubMatch: Boolean = false,
     isPinnedScoreboard: Boolean = false,
     onPinClick: () -> Unit = {},
+    onOpenStatsOverlay: () -> Unit = {},
     onClick: () -> Unit
 ) {
     val compColor = Color(match.competition.badgeColorHex)
@@ -840,8 +913,8 @@ private fun CleanOledMatchRowCard(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = buildString {
-                        append("${match.competition.shortTag} • ${match.minute}' LIVE • ${match.venue}")
-                        if (isFavoriteClubMatch) append(" • ★ FCM Alert")
+                        append("${match.competition.shortTag} • ${match.minute}' LIVE • Poss ${match.stats.homePossession}%-${match.stats.awayPossession}%")
+                        if (isFavoriteClubMatch) append(" • ★ FCM")
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isFavoriteClubMatch) VerifiedPillGreen else OledMutedText,
@@ -849,6 +922,27 @@ private fun CleanOledMatchRowCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            // 1-Tap Stats Overlay Button
+            Surface(
+                color = Color(0xFF1A222B),
+                shape = CircleShape,
+                border = BorderStroke(1.dp, VerifiedPillGreen.copy(alpha = 0.45f)),
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(28.dp)
+                    .clickable(onClick = onOpenStatsOverlay)
+                    .testTag("match_stats_overlay_button_${match.id}")
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Analytics,
+                        contentDescription = "Open Live Match Stats Overlay",
+                        tint = VerifiedPillGreen,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
 
             // Pin to Dynamic Island & Notification Bar Button
@@ -920,6 +1014,8 @@ private fun LiveStadiumBroadcastCard(
     onSelectServer: (StreamServer) -> Unit,
     onToggleSubscription: () -> Unit,
     onPinScoreboard: () -> Unit = {},
+    onOpenStatsOverlayModal: () -> Unit = {},
+    onSimulateLiveStat: (String, Boolean) -> Unit = { _, _ -> },
     onOpenEpicSportsPortal: (String, String) -> Unit
 ) {
     // Player mode: "LIVE_VIDEO" (Native 60fps Live Broadcast Stream + Scoreboard HUD), "EPICSPORTS_WEB" (live.epicsports.in/?m=1), "RADAR"
@@ -974,10 +1070,16 @@ private fun LiveStadiumBroadcastCard(
                             testTag = "mode_live_video_button"
                         )
                         PlayerModeChip(
-                            label = "EpicSports.in Feed",
+                            label = "EpicSports.in",
                             selected = playerMode == "EPICSPORTS_WEB",
                             onClick = { playerMode = "EPICSPORTS_WEB" },
                             testTag = "mode_epicsports_web_button"
+                        )
+                        PlayerModeChip(
+                            label = "Stats Overlay",
+                            selected = playerMode == "STATS_OVERLAY",
+                            onClick = { playerMode = "STATS_OVERLAY" },
+                            testTag = "mode_stats_overlay_button"
                         )
                         PlayerModeChip(
                             label = "2D Radar",
@@ -991,6 +1093,22 @@ private fun LiveStadiumBroadcastCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        IconButton(
+                            onClick = onOpenStatsOverlayModal,
+                            modifier = Modifier
+                                .size(30.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1A222B))
+                                .testTag("open_stats_overlay_modal_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Analytics,
+                                contentDescription = "Open Full Live Match Stats Overlay Detail View",
+                                tint = VerifiedPillGreen,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+
                         Surface(
                             color = if (isPinnedScoreboard && isPinnedToNotificationBar) {
                                 VerifiedPillGreen.copy(alpha = 0.22f)
@@ -1044,11 +1162,11 @@ private fun LiveStadiumBroadcastCard(
                     }
                 }
 
-                // Live Video Player / EpicSports.in Server Stream / Tactical Radar Viewport
+                // Live Video Player / EpicSports.in Server Stream / Stats Overlay / Tactical Radar Viewport
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(235.dp)
+                        .height(if (playerMode == "STATS_OVERLAY") 390.dp else 235.dp)
                         .background(
                             Brush.verticalGradient(
                                 listOf(Color(0xFF0A0C10), Color(0xFF141820), Color(0xFF090B0E))
@@ -1079,6 +1197,15 @@ private fun LiveStadiumBroadcastCard(
                                         selectedServer.streamUrl
                                     )
                                 }
+                            )
+                        }
+
+                        "STATS_OVERLAY" -> {
+                            LiveMatchStatsOverlayContent(
+                                match = match,
+                                isCompactInPlayer = true,
+                                onClose = { playerMode = "LIVE_VIDEO" },
+                                onSimulateLiveStat = onSimulateLiveStat
                             )
                         }
 
@@ -1481,6 +1608,12 @@ private fun NativeLiveBroadcastVideoPlayer(
     isMuted: Boolean,
     animationPhase: Float
 ) {
+    val context = LocalContext.current
+    LaunchedEffect(match.id, server.id, isPlaying) {
+        // Guarantee FLAG_SECURE display block is removed so live match streams are visible on all devices
+        (context as? Activity)?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
     val activePhase = if (isPlaying) animationPhase else 0.42f
     val latestEventText = remember(match.commentary, match.minute) {
         match.commentary.firstOrNull()?.let { "${it.minute}' ${it.headline}: ${it.detail}" }
